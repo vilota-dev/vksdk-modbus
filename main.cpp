@@ -112,7 +112,7 @@ main( int argc, char *argv[] )
         fprintf( stderr, "%s: can't install signal handlers: %s!\n", PROG, strerror( errno ) );
         iExitCode = EXIT_FAILURE;
     }
-    else if( eMBInit( MB_RTU, 0x0A, 4, 115200, MB_PAR_EVEN ) != MB_ENOERR )
+    else if( eMBInit( MB_RTU, 0x11, 4, 115200, MB_PAR_EVEN ) != MB_ENOERR )
     {
         fprintf( stderr, "%s: can't initialize modbus stack!\n", PROG );
         iExitCode = EXIT_FAILURE;
@@ -143,69 +143,11 @@ main( int argc, char *argv[] )
         // Start the data source so messages can be received by `myReceiver`.
         visualkit->source().start();
 
-        /* CLI interface. */
-        printf( "Type 'q' for quit or 'h' for help!\n" );
-        bDoExit = FALSE;
-        do
-        {
-            printf( "> " );
-            cCh = getchar(  );
-
-            switch ( cCh )
-            {
-            case 'q':
-                bDoExit = TRUE;
-                break;
-            case 'd':
-                vSetPollingThreadState( SHUTDOWN );
-                break;
-            case 'e':
-                if( bCreatePollingThread(  ) != TRUE )
+         if( bCreatePollingThread(  ) != TRUE )
                 {
                     printf( "Can't start protocol stack! Already running?\n" );
                 }
-                // Wait for the user to send the CTRL-C signal.
-                vkc::waitForCtrlCSignal();
-                break;
-            case 's':
-                switch ( eGetPollingThreadState(  ) )
-                {
-                case RUNNING:
-                    printf( "Protocol stack is running.\n" );
-                    break;
-                case STOPPED:
-                    printf( "Protocol stack is stopped.\n" );
-                    break;
-                case SHUTDOWN:
-                    printf( "Protocol stack is shuting down.\n" );
-                    break;
-                }
-                break;
-            case 'h':
-                printf( "FreeModbus demo application help:\n" );
-                printf( "  'd' ... disable protocol stack.\n" );
-                printf( "  'e' ... enabled the protocol stack.\n" );
-                printf( "  's' ... show current status.\n" );
-                printf( "  'q' ... quit application.\n" );
-                printf( "  'h' ... this information.\n" );
-                printf( "\n" );
-                printf( "Copyright 2006 Christian Walter <wolti@sil.at>\n" );
-                break;
-            default:
-                if( !bDoExit && ( cCh != '\n' ) )
-                {
-                    printf( "illegal command '%c'!\n", cCh );
-                }
-                break;
-            }
-
-            /* eat up everything untill return character. */
-            while( !bDoExit && ( cCh != '\n' ) )
-            {
-                cCh = getchar(  );
-            }
-        }
-        while( !bDoExit );
+        vkc::waitForCtrlCSignal();
 
         /* Release hardware resources. */
         ( void )eMBClose(  );
