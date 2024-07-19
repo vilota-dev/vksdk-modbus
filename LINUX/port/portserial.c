@@ -38,12 +38,20 @@
 #include "mbport.h"
 #include "mbconfig.h"
 
+/*----------------------GPIO--------------------------------------------------*/
+#include "gpiod.h"
+
 /* ----------------------- Defines  -----------------------------------------*/
 #if MB_ASCII_ENABLED == 1
 #define BUF_SIZE    513         /* must hold a complete ASCII frame. */
 #else
 #define BUF_SIZE    256         /* must hold a complete RTU frame. */
 #endif
+
+// gpio stuff 
+const char *chipname = "gpiochip3";
+struct gpiod_chip *chip;
+struct gpiod_line *line;
 
 /* ----------------------- Static variables ---------------------------------*/
 static int      iSerialFd = -1;
@@ -82,6 +90,7 @@ vMBPortSerialEnable( BOOL bEnableRx, BOOL bEnableTx )
     {
         bTxEnabled = TRUE;
         uiTxBufferPos = 0;
+        gpiod_line_set_value(line, 1);//set to 1 for transmit 
     }
     else
     {
@@ -97,9 +106,11 @@ xMBPortSerialInit( UCHAR ucPort, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity e
 
     struct termios  xNewTIO;
     speed_t         xNewSpeed;
+    int ret;
 
-    //snprintf( szDevice, 16, "/dev/ttyS%d", ucPort );
-	snprintf( szDevice, 16,"/dev/ttyACM%d", ucPort );
+    snprintf( szDevice, 16, "/dev/ttyS%d", ucPort );
+    
+//	snprintf( szDevice, 16,"/dev/ttyACM%d", ucPort );
     if( ( iSerialFd = open( szDevice, O_RDWR | O_NOCTTY ) ) < 0 )
     {
         vMBPortLog( MB_LOG_ERROR, "SER-INIT", "Can't open serial port %s: %s\n", szDevice,
@@ -184,6 +195,28 @@ xMBPortSerialInit( UCHAR ucPort, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity e
             }
         }
     }
+	
+    
+    //open chip  
+    chip = gpiod_chip_open_by_name(chipname);
+    if(!chip){
+        perror("unable to allocate chip\n");
+        return bStatus;
+    }
+    //open gpio line
+    line = gpiod_chip_get_line(chip,17);
+    if(!chip){
+        perror("unable to get line\n");
+        return bStatus;
+    }
+    ret = gpiod_line_request_output(line, "foo",0);
+    if(ret < 0){
+        perror("unable to set line as output\n");
+        return bStatus;
+    }
+
+    gpiod_line_set_value(line, 0);//set to 0 for receive 
+   
     return bStatus;
 }
 
@@ -279,6 +312,7 @@ prvbMBPortSerialWrite( UCHAR * pucBuffer, USHORT usNBytes )
         done += res;
         left -= res;
     }
+    
     return left == 0 ? TRUE : FALSE;
 }
 
@@ -317,17 +351,22 @@ xMBPortSerialPoll(  )
     }
     if( bTxEnabled )
     {
+
         while( bTxEnabled )
         {
             ( void )pxMBFrameCBTransmitterEmpty(  );
             /* Call the modbus stack to let him fill the buffer. */
         }
+        gpiod_line_set_value(line, 1);//set to 1 for transmit 
         if( !prvbMBPortSerialWrite( &ucBuffer[0], uiTxBufferPos ) )
         {
             vMBPortLog( MB_LOG_ERROR, "SER-POLL", "write failed on serial device: %s\n",
                         strerror( errno ) );
             bStatus = FALSE;
         }
+	usleep(10000);
+	gpiod_line_set_value(line, 0);//set to 0 for receive 
+				 
     }
 
     return bStatus;

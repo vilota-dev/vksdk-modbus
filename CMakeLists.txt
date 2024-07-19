@@ -45,11 +45,11 @@ set(MB_COMM_AICAM_SRC
 )
 
 set(CapnProto_DIR "/usr/local/lib/cmake/CapnProto")
-set(vk_sdk_DIR "/usr/local/lib/cmake/vk_sdk")
+set(vk_sdk_DIR "/opt/vilota/lib/cmake/vk_sdk")
 
 find_package(vk_sdk REQUIRED)
 
 
 
 add_executable(main ${MB_COMM_AICAM_SRC})
-target_link_libraries(main PUBLIC pthread CapnProto::capnp PRIVATE vilota::vk_sdk)
+target_link_libraries(main PUBLIC pthread gpiod CapnProto::capnp PRIVATE vilota::vk_sdk)

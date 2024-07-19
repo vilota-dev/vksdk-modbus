@@ -112,7 +112,7 @@ main( int argc, char *argv[] )
         fprintf( stderr, "%s: can't install signal handlers: %s!\n", PROG, strerror( errno ) );
         iExitCode = EXIT_FAILURE;
     }
-    else if( eMBInit( MB_RTU, 0x0A, 0, 115200, MB_PAR_EVEN ) != MB_ENOERR )
+    else if( eMBInit( MB_RTU, 0x0A, 4, 115200, MB_PAR_EVEN ) != MB_ENOERR )
     {
         fprintf( stderr, "%s: can't initialize modbus stack!\n", PROG );
         iExitCode = EXIT_FAILURE;
