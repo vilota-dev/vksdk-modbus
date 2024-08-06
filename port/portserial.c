@@ -201,17 +201,20 @@ xMBPortSerialInit( UCHAR ucPort, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity e
     chip = gpiod_chip_open_by_name(chipname);
     if(!chip){
         perror("unable to allocate chip\n");
+        bStatus = FALSE;
         return bStatus;
     }
     //open gpio line
     line = gpiod_chip_get_line(chip,17);
     if(!chip){
         perror("unable to get line\n");
+        bStatus = FALSE;
         return bStatus;
     }
     ret = gpiod_line_request_output(line, "foo",0);
     if(ret < 0){
         perror("unable to set line as output\n");
+        bStatus = FALSE;
         return bStatus;
     }
 

@@ -60,7 +60,6 @@ eMBSetSlaveID( UCHAR ucSlaveID, BOOL xIsRunning,
      * the buffer is available for additional data. */
     if( usAdditionalLen + 2 < MB_FUNC_OTHER_REP_SLAVEID_BUF )
     {
-        printf("%d\n", ucSlaveID);
         usMBSlaveIDLen = 0;
         ucMBSlaveID[usMBSlaveIDLen++] = ucSlaveID;
         ucMBSlaveID[usMBSlaveIDLen++] = ( UCHAR )( xIsRunning ? 0xFF : 0x00 );

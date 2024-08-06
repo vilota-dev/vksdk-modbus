@@ -6,7 +6,8 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
-
+#include <atomic>
+#include <chrono>
 /* ----------------------- Modbus includes ----------------------------------*/
 #include "mb.h"
 #include "mbport.h"
@@ -19,7 +20,6 @@
 
 /* ----------------------- Defines ------------------------------------------*/
 #define PROG            "freemodbus"
-
 #define REG_INPUT_START 1000
 #define REG_INPUT_NREGS 4
 #define REG_HOLDING_START 2000
@@ -40,7 +40,22 @@ static enum ThreadState
 
 static pthread_mutex_t xLock = PTHREAD_MUTEX_INITIALIZER;
 static BOOL     bDoExit;
-int detected = 0;
+std::atomic<int> detected(0);
+
+enum WantHeartbeat {
+    None,
+    System,
+    CameraDriver,
+    Vio,
+};
+const int TIMEOUT_SECONDS = 1;
+
+std::atomic<WantHeartbeat> want = WantHeartbeat::None;
+std::atomic<uint32_t> want_index = WantHeartbeat::None;
+
+std::mutex heartbeat_mutex;
+std::condition_variable heartbeat_cv;
+bool received_heartbeat = false;
 
 /* ----------------------- Static functions ---------------------------------*/
 static BOOL     bCreatePollingThread( void );
@@ -48,8 +63,8 @@ static enum ThreadState eGetPollingThreadState( void );
 static void     vSetPollingThreadState( enum ThreadState eNewState );
 static void    *pvPollingThread( void *pvParameter );
 
-// Our custom receiver to receiver messages.
-class MyReceiver : public vkc::Receiver<vkc::Detections2d> {
+// Custom receiver for detections messages.
+class DetectionsReceiver : public vkc::Receiver<vkc::Detections2d> {
     // Override this method to handle messages.
     vkc::ReceiverStatus handle(const vkc::Message<vkc::Shared<vkc::Detections2d>>& message) override {
         auto all_detections = message.payload.reader();
@@ -58,11 +73,70 @@ class MyReceiver : public vkc::Receiver<vkc::Detections2d> {
         for (const auto& detection : all_detections.getDetections()){
             std::string d = labels[detection.getLabelIdx()].cStr();
             if(d == "person"){
-                std::cout << d << std::endl;
+                std::cout <<"person detected" << std::endl;
                 detected = 1;
             }
         }
         return vkc::ReceiverStatus::Open;
+    }
+};
+
+class MessageReceiver : public vkc::Receiver<vkc::ManagerMessage> {
+public:
+    // Override this method to handle messages.
+    vkc::ReceiverStatus handle(const vkc::Message<vkc::Shared<vkc::ManagerMessage>>& message) override {
+        auto desired = want.load();
+        auto index = want_index.load();
+
+        auto heartbeat = message.payload.reader();
+        auto variant = heartbeat.getVariant();
+
+        std::lock_guard lock(heartbeat_mutex);
+
+        if (received_heartbeat) {
+            return vkc::ReceiverStatus::Closed;
+        } else if (variant.isSystem() && desired == WantHeartbeat::System) {
+            auto system = variant.getSystem().getVariant();
+
+            if (system.isInfo()) {
+                auto info = system.getInfo();
+                std::cout << "Avg. Temperature: " << info.getTemperature().getAverageCelsius() << std::endl;
+                std::cout << "Max. Temperature: " << info.getTemperature().getMaximumCelsius() << std::endl;
+                std::cout << "RAM: " << info.getRam().getUsed() << " / " << info.getRam().getTotal() << std::endl;
+                for (auto cpu = info.getCpu().begin(); cpu != info.getCpu().end(); ++cpu) {
+                    std::cout << "Core Usage: " << cpu->getUsage() << "%" << std::endl;
+                }
+                received_heartbeat = true;
+            }
+        } else if (variant.isCameraDriver() && desired == WantHeartbeat::CameraDriver && variant.getCameraDriver().getTarget() == index) {
+            auto camera = variant.getCameraDriver().getVariant();
+
+            if (camera.isHeartbeat()) {
+                auto heartbeat = camera.getHeartbeat();
+                std::cout << "Status: " << static_cast<int>(heartbeat.getStatus()) << std::endl;
+                std::cout << "VPU Temperature: " << heartbeat.getTemperature() << std::endl;
+                std::cout << "Current Configuration: " << heartbeat.getConfiguration().cStr() << std::endl;
+                received_heartbeat = true;
+            }
+        } else if (variant.isVio() && desired == WantHeartbeat::Vio && variant.getVio().getTarget() == index) {
+            auto vio = variant.getVio().getVariant();
+
+            if (vio.isHeartbeat()) {
+                auto heartbeat = vio.getHeartbeat();
+
+                std::cout << "Status: " << static_cast<int>(heartbeat.getStatus()) << std::endl;
+                std::cout << "Current Configuration: " << heartbeat.getConfiguration().cStr() << std::endl;
+                received_heartbeat = true;
+            }
+        }
+
+        if (received_heartbeat) {
+            heartbeat_cv.notify_one();
+            return vkc::ReceiverStatus::Closed;
+        } else {
+            return vkc::ReceiverStatus::Open;
+        }
+
     }
 };
 
@@ -94,6 +168,8 @@ vSigShutdown( int xSigNr )
     {
     case SIGQUIT:
     case SIGINT:
+        vSetPollingThreadState( SHUTDOWN );
+        bDoExit = TRUE; 
     case SIGTERM:
         vSetPollingThreadState( SHUTDOWN );
         bDoExit = TRUE;
@@ -105,18 +181,29 @@ main( int argc, char *argv[] )
 {
     int             iExitCode;
     CHAR            cCh;
+    std::string remote = "127.0.0.1";
+        
+
+    if(argc < 2 || argc > 2){
+        std::cout << "Improper use see below for usage\n"
+                << "./main <modbus_id> "
+                << std::endl;
+        return -1;
+    }
+
+    int modbus_id = atoi(argv[1]);
 
     const UCHAR     ucSlaveID[] = { 0xAA, 0xBB, 0xCC };
-    if( !bSetSignal( SIGQUIT, vSigShutdown ) || !bSetSignal( SIGTERM, vSigShutdown ) )
+    if( !bSetSignal( SIGQUIT || SIGINT, vSigShutdown ) || !bSetSignal( SIGTERM, vSigShutdown ) )
     {
         fprintf( stderr, "%s: can't install signal handlers: %s!\n", PROG, strerror( errno ) );
         iExitCode = EXIT_FAILURE;
     }
-    else if( eMBInit( MB_RTU, 0x11, 4, 115200, MB_PAR_EVEN ) != MB_ENOERR )
+    else if( eMBInit( MB_RTU, modbus_id, 4, 115200, MB_PAR_EVEN ) != MB_ENOERR )
     {
         fprintf( stderr, "%s: can't initialize modbus stack!\n", PROG );
         iExitCode = EXIT_FAILURE;
-    }
+    }   
     else if( eMBSetSlaveID( 0x34, TRUE, ucSlaveID, 3 ) != MB_ENOERR )
     {
         fprintf( stderr, "%s: can't set slave id!\n", PROG );
@@ -126,7 +213,7 @@ main( int argc, char *argv[] )
     {
         vSetPollingThreadState( STOPPED );
         //initalize sdk stuff 
-        auto visualkit = vkc::VisualKit::create(std::nullopt);
+        auto visualkit = vkc::VisualKit::create(remote);
 
         // Check that the object has been created successfully before proceeding.
         if (visualkit == nullptr) {
@@ -134,11 +221,15 @@ main( int argc, char *argv[] )
             return -1;
         }
         
-        // Create the receiver that was defined by us.
-        auto myReceiver = std::make_unique<MyReceiver>();
+        // Create custom receiver
+        auto detectionReceiver = std::make_unique<DetectionsReceiver>();
+    
+       // auto heartbeatReceiver = std::make_unique<HeartbeatReceiver>();
 
         // Install the receiver into the data source so that the receiver can receive messages.
-        visualkit->source().install("S0/camd/yolo", std::move(myReceiver));
+        //visualkit->source().install("S0/camd/yolo", std::move(detectionReceiver));
+        auto messages = visualkit->source().install("ws/message", std::make_unique<MessageReceiver>());
+       // visualkit->source().install("S0/camd", std::move(heartbeatReceiver));
         
         // Start the data source so messages can be received by `myReceiver`.
         visualkit->source().start();
@@ -146,6 +237,7 @@ main( int argc, char *argv[] )
          if( bCreatePollingThread(  ) != TRUE )
                 {
                     printf( "Can't start protocol stack! Already running?\n" );
+                    
                 }
         vkc::waitForCtrlCSignal();
 
@@ -193,7 +285,17 @@ pvPollingThread( void *pvParameter )
         {
             if( eMBPoll(  ) != MB_ENOERR )
                 break;
+            want = WantHeartbeat::CameraDriver;
+            std::unique_lock lock(heartbeat_mutex);
+            if (!heartbeat_cv.wait_for(lock, std::chrono::seconds(TIMEOUT_SECONDS), [&]{ return received_heartbeat; })) {
+                std::cout << "Did not receive any heartbeat from camera " << "s0/camd" << "." << std::endl; 
+                detected = 0;
+            }
+            std::cout << received_heartbeat << std::endl;
+            ( void )pthread_mutex_lock( &xLock );    
             usRegInputBuf[0] = ( USHORT ) detected;
+             received_heartbeat = false;
+            ( void )pthread_mutex_unlock( &xLock );
         }
         while( eGetPollingThreadState(  ) != SHUTDOWN );
     }
@@ -232,7 +334,7 @@ eMBRegInputCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs )
     int             iRegIndex;
 
     if( ( usAddress >= REG_INPUT_START )
-        && ( usAddress + usNRegs <= REG_INPUT_START + REG_INPUT_NREGS ) )
+        && ( usAddress + usNRegs <= usRegInputStart  + REG_INPUT_NREGS ) )
     {
         iRegIndex = ( int )( usAddress - usRegInputStart );
         while( usNRegs > 0 )

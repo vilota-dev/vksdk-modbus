@@ -40,6 +40,8 @@
 #include "mbproto.h"
 #include "mbconfig.h"
 
+#include "stdio.h"
+
 /* ----------------------- Defines ------------------------------------------*/
 #define MB_PDU_FUNC_READ_ADDR_OFF           ( MB_PDU_DATA_OFF )
 #define MB_PDU_FUNC_READ_REGCNT_OFF         ( MB_PDU_DATA_OFF + 2 )
@@ -63,7 +65,7 @@ eMBFuncReadInputRegister( UCHAR * pucFrame, USHORT * usLen )
 
     eMBException    eStatus = MB_EX_NONE;
     eMBErrorCode    eRegStatus;
-
+    
     if( *usLen == ( MB_PDU_FUNC_READ_SIZE + MB_PDU_SIZE_MIN ) )
     {
         usRegAddress = ( USHORT )( pucFrame[MB_PDU_FUNC_READ_ADDR_OFF] << 8 );

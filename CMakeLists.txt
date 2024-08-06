@@ -7,7 +7,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -MD -g3 -std=c++17 -Wno-reorder -Werror 
 
 include_directories(
 	${PROJECT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/LINUX/port
+    ${PROJECT_SOURCE_DIR}/port
 	${PROJECT_SOURCE_DIR}/modbus
 	${PROJECT_SOURCE_DIR}/modbus/include
 	${PROJECT_SOURCE_DIR}/modbus/rtu
@@ -21,10 +21,10 @@ set(MB_AICAM_SRC
 )
 
 set(MB_LIB_SRC 
-    LINUX/port/portevent.c
-    LINUX/port/portother.c
-	LINUX/port/portserial.c
-	LINUX/port/porttimer.c
+    port/portevent.c
+    port/portother.c
+	port/portserial.c
+	port/porttimer.c
 	modbus/mb.c
 	modbus/rtu/mbcrc.c
 	modbus/rtu/mbrtu.c
@@ -44,7 +44,7 @@ set(MB_COMM_AICAM_SRC
     ${MB_AICAM_SRC}
 )
 
-set(CapnProto_DIR "/usr/local/lib/cmake/CapnProto")
+set(CapnProto_DIR "/opt/vilota/lib/cmake/CapnProto")
 set(vk_sdk_DIR "/opt/vilota/lib/cmake/vk_sdk")
 
 find_package(vk_sdk REQUIRED)
