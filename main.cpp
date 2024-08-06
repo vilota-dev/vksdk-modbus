@@ -48,7 +48,7 @@ enum WantHeartbeat {
     CameraDriver,
     Vio,
 };
-const int TIMEOUT_SECONDS = 1;
+const int TIMEOUT_MILLI_SECONDS = 3000;
 
 std::atomic<WantHeartbeat> want = WantHeartbeat::None;
 std::atomic<uint32_t> want_index = WantHeartbeat::None;
@@ -62,6 +62,7 @@ static BOOL     bCreatePollingThread( void );
 static enum ThreadState eGetPollingThreadState( void );
 static void     vSetPollingThreadState( enum ThreadState eNewState );
 static void    *pvPollingThread( void *pvParameter );
+static void *heartbeatThread(void * params);
 
 // Custom receiver for detections messages.
 class DetectionsReceiver : public vkc::Receiver<vkc::Detections2d> {
@@ -112,10 +113,12 @@ public:
             auto camera = variant.getCameraDriver().getVariant();
 
             if (camera.isHeartbeat()) {
+                /*
                 auto heartbeat = camera.getHeartbeat();
                 std::cout << "Status: " << static_cast<int>(heartbeat.getStatus()) << std::endl;
                 std::cout << "VPU Temperature: " << heartbeat.getTemperature() << std::endl;
                 std::cout << "Current Configuration: " << heartbeat.getConfiguration().cStr() << std::endl;
+                */
                 received_heartbeat = true;
             }
         } else if (variant.isVio() && desired == WantHeartbeat::Vio && variant.getVio().getTarget() == index) {
@@ -223,17 +226,18 @@ main( int argc, char *argv[] )
         
         // Create custom receiver
         auto detectionReceiver = std::make_unique<DetectionsReceiver>();
-    
+        auto messageReceiver = std::make_unique<MessageReceiver>();
        // auto heartbeatReceiver = std::make_unique<HeartbeatReceiver>();
 
         // Install the receiver into the data source so that the receiver can receive messages.
-        //visualkit->source().install("S0/camd/yolo", std::move(detectionReceiver));
-        auto messages = visualkit->source().install("ws/message", std::make_unique<MessageReceiver>());
-       // visualkit->source().install("S0/camd", std::move(heartbeatReceiver));
+        visualkit->source().install("S0/cama/yolo", std::move(detectionReceiver));
+        auto messages = visualkit->source().install("ws/message", std::move(messageReceiver));
         
         // Start the data source so messages can be received by `myReceiver`.
         visualkit->source().start();
-
+        pthread_t hThread;
+        pthread_create(&hThread, NULL, heartbeatThread,NULL);
+        
          if( bCreatePollingThread(  ) != TRUE )
                 {
                     printf( "Can't start protocol stack! Already running?\n" );
@@ -285,16 +289,10 @@ pvPollingThread( void *pvParameter )
         {
             if( eMBPoll(  ) != MB_ENOERR )
                 break;
-            want = WantHeartbeat::CameraDriver;
-            std::unique_lock lock(heartbeat_mutex);
-            if (!heartbeat_cv.wait_for(lock, std::chrono::seconds(TIMEOUT_SECONDS), [&]{ return received_heartbeat; })) {
-                std::cout << "Did not receive any heartbeat from camera " << "s0/camd" << "." << std::endl; 
-                detected = 0;
-            }
-            std::cout << received_heartbeat << std::endl;
+
             ( void )pthread_mutex_lock( &xLock );    
             usRegInputBuf[0] = ( USHORT ) detected;
-             received_heartbeat = false;
+            received_heartbeat = false;
             ( void )pthread_mutex_unlock( &xLock );
         }
         while( eGetPollingThreadState(  ) != SHUTDOWN );
@@ -406,4 +404,16 @@ eMBErrorCode
 eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
 {
     return MB_ENOREG;
+}
+
+
+void * heartbeatThread(void * params){
+    while(1){
+        want = WantHeartbeat::CameraDriver;
+        std::unique_lock lock(heartbeat_mutex);
+        if (!heartbeat_cv.wait_for(lock, std::chrono::milliseconds(TIMEOUT_MILLI_SECONDS), [&]{ return received_heartbeat; })) {
+            std::cout << "Did not receive any heartbeat from camera " << "s0/cama" << "." << std::endl; 
+            detected = 2;
+        }
+    }
 }
