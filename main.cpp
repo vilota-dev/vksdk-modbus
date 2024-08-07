@@ -41,6 +41,7 @@ static enum ThreadState
 static pthread_mutex_t xLock = PTHREAD_MUTEX_INITIALIZER;
 static BOOL     bDoExit;
 std::atomic<int> detected(0);
+std::atomic<int> heartbeatOk(0);
 
 enum WantHeartbeat {
     None,
@@ -119,6 +120,7 @@ public:
                 std::cout << "VPU Temperature: " << heartbeat.getTemperature() << std::endl;
                 std::cout << "Current Configuration: " << heartbeat.getConfiguration().cStr() << std::endl;
                 */
+                heartbeatOk = 1;
                 received_heartbeat = true;
             }
         } else if (variant.isVio() && desired == WantHeartbeat::Vio && variant.getVio().getTarget() == index) {
@@ -227,11 +229,10 @@ main( int argc, char *argv[] )
         // Create custom receiver
         auto detectionReceiver = std::make_unique<DetectionsReceiver>();
         auto messageReceiver = std::make_unique<MessageReceiver>();
-       // auto heartbeatReceiver = std::make_unique<HeartbeatReceiver>();
 
         // Install the receiver into the data source so that the receiver can receive messages.
         visualkit->source().install("S0/cama/yolo", std::move(detectionReceiver));
-        auto messages = visualkit->source().install("ws/message", std::move(messageReceiver));
+        visualkit->source().install("ws/message", std::move(messageReceiver));
         
         // Start the data source so messages can be received by `myReceiver`.
         visualkit->source().start();
@@ -292,6 +293,7 @@ pvPollingThread( void *pvParameter )
 
             ( void )pthread_mutex_lock( &xLock );    
             usRegInputBuf[0] = ( USHORT ) detected;
+            usRegInputBuf[1] = ( USHORT ) heartbeatOk;
             received_heartbeat = false;
             ( void )pthread_mutex_unlock( &xLock );
         }
@@ -412,8 +414,8 @@ void * heartbeatThread(void * params){
         want = WantHeartbeat::CameraDriver;
         std::unique_lock lock(heartbeat_mutex);
         if (!heartbeat_cv.wait_for(lock, std::chrono::milliseconds(TIMEOUT_MILLI_SECONDS), [&]{ return received_heartbeat; })) {
-            std::cout << "Did not receive any heartbeat from camera " << "s0/cama" << "." << std::endl; 
-            detected = 2;
+            std::cout << "Did not receive any heartbeat from camera " << "s0/cama" << "." << std::endl;
+            heartbeatOk = 0; 
         }
     }
 }
