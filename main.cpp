@@ -19,17 +19,21 @@
 #include <optional>
 
 /* ----------------------- Defines ------------------------------------------*/
-#define PROG            "freemodbus"
-#define REG_INPUT_START 1000
-#define REG_INPUT_NREGS 4
+/* Edit to change baudrate and register locations */
+#define PROG "vksdk-modbus"
+#define REG_INPUT_START 1
+#define REG_INPUT_NREGS 2
 #define REG_HOLDING_START 2000
 #define REG_HOLDING_NREGS 130
+#define BAUD_RATE 115200  
 
 /* ----------------------- Static variables ---------------------------------*/
-static USHORT   usRegInputStart = REG_INPUT_START;
+static USHORT   usRegInputStart = REG_INPUT_START + 1; //offset fix
 static USHORT   usRegInputBuf[REG_INPUT_NREGS];
 static USHORT   usRegHoldingStart = REG_HOLDING_START;
 static USHORT   usRegHoldingBuf[REG_HOLDING_NREGS];
+
+const std::string target = "person"; //change for different targets
 
 static enum ThreadState
 {
@@ -74,8 +78,8 @@ class DetectionsReceiver : public vkc::Receiver<vkc::Detections2d> {
         detected = 0;
         for (const auto& detection : all_detections.getDetections()){
             std::string d = labels[detection.getLabelIdx()].cStr();
-            if(d == "person"){
-                std::cout <<"person detected" << std::endl;
+            if(d == target){
+                std::cout << target <<" detected" << std::endl;
                 detected = 1;
             }
         }
@@ -187,7 +191,6 @@ main( int argc, char *argv[] )
     int             iExitCode;
     CHAR            cCh;
     std::string remote = "127.0.0.1";
-        
 
     if(argc < 2 || argc > 2){
         std::cout << "Improper use see below for usage\n"
@@ -204,7 +207,7 @@ main( int argc, char *argv[] )
         fprintf( stderr, "%s: can't install signal handlers: %s!\n", PROG, strerror( errno ) );
         iExitCode = EXIT_FAILURE;
     }
-    else if( eMBInit( MB_RTU, modbus_id, 4, 115200, MB_PAR_EVEN ) != MB_ENOERR )
+    else if( eMBInit( MB_RTU, modbus_id, 4, BAUD_RATE, MB_PAR_EVEN ) != MB_ENOERR )
     {
         fprintf( stderr, "%s: can't initialize modbus stack!\n", PROG );
         iExitCode = EXIT_FAILURE;
@@ -333,7 +336,7 @@ eMBRegInputCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs )
     eMBErrorCode    eStatus = MB_ENOERR;
     int             iRegIndex;
 
-    if( ( usAddress >= REG_INPUT_START )
+    if( ( usAddress >= REG_INPUT_START + 1) //offset fix
         && ( usAddress + usNRegs <= usRegInputStart  + REG_INPUT_NREGS ) )
     {
         iRegIndex = ( int )( usAddress - usRegInputStart );
