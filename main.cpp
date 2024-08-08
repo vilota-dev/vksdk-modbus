@@ -28,7 +28,7 @@
 #define BAUD_RATE 115200  
 
 /* ----------------------- Static variables ---------------------------------*/
-static USHORT   usRegInputStart = REG_INPUT_START + 1; //offset fix
+static USHORT   usRegInputStart = REG_INPUT_START; 
 static USHORT   usRegInputBuf[REG_INPUT_NREGS];
 static USHORT   usRegHoldingStart = REG_HOLDING_START;
 static USHORT   usRegHoldingBuf[REG_HOLDING_NREGS];
@@ -336,7 +336,7 @@ eMBRegInputCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs )
     eMBErrorCode    eStatus = MB_ENOERR;
     int             iRegIndex;
 
-    if( ( usAddress >= REG_INPUT_START + 1) //offset fix
+    if( ( usAddress >= REG_INPUT_START) 
         && ( usAddress + usNRegs <= usRegInputStart  + REG_INPUT_NREGS ) )
     {
         iRegIndex = ( int )( usAddress - usRegInputStart );
