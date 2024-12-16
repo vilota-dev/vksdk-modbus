@@ -19,6 +19,7 @@ This codebase was designed to incorporate the vkl-m12 system along with a radxa 
     sudo armbian-add-overlay rk356x-uart4-m1.dts
     sudo reboot now
     ```
+ttyS4 should now be listed under /dev/
 
 ## Compiling 
 ```
